@@ -9,9 +9,10 @@ import { Mic, Settings, Wifi, Volume2, CheckCircle, AlertCircle, Loader2 } from 
 import { toast } from "sonner";
 import { InfoPanel } from "@/components/InfoPanel";
 import esp32HeroImage from "@/assets/esp32-hero.jpg";
+import { supabase } from "@/integrations/supabase/client";
 
 type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
-type AudioStatus = "idle" | "converting" | "sending" | "playing" | "error";
+type AudioStatus = "idle" | "converting" | "converted" | "sending" | "playing" | "error";
 
 export const VoiceApp = () => {
   const [message, setMessage] = useState("");
@@ -53,41 +54,58 @@ export const VoiceApp = () => {
       toast.info("Converting text to speech...");
 
       // Call Supabase edge function for TTS conversion and ESP32 upload
-      const response = await fetch('/api/text-to-speech', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
+      const { data, error } = await supabase.functions.invoke('text-to-speech', {
+        body: {
           message: message.trim(),
           esp32Ip: esp32Ip.trim()
-        })
+        }
       });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to process audio');
+      if (error) {
+        throw new Error(error.message || 'Failed to process audio');
       }
 
-      setAudioStatus("sending");
-      toast.info("Sending audio to ESP32...");
+      // Check if audio was successfully converted
+      if (data?.success) {
+        setAudioStatus("converted");
+        toast.success("✅ MP3 file created successfully!");
+        
+        // Small delay to show converted status
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        setAudioStatus("sending");
+        toast.info("📤 Sending audio to ESP32...");
 
-      // Small delay to show sending status
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      setAudioStatus("playing");
-      toast.success("Audio is now playing on ESP32!");
+        // Small delay to show sending status
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        setAudioStatus("playing");
+        toast.success("🔊 Audio is now playing on ESP32!");
 
-      // Reset status after "playback"
-      setTimeout(() => {
-        setAudioStatus("idle");
-      }, 3000);
+        // Reset status after "playback"
+        setTimeout(() => {
+          setAudioStatus("idle");
+        }, 3000);
+      } else {
+        throw new Error(data?.error || 'Unknown error occurred');
+      }
 
     } catch (error) {
       console.error('TTS Error:', error);
       setAudioStatus("error");
-      toast.error(error instanceof Error ? error.message : "Failed to process audio");
-      setTimeout(() => setAudioStatus("idle"), 2000);
+      
+      // Provide specific error messages based on the error type
+      const errorMessage = error instanceof Error ? error.message : "Failed to process audio";
+      
+      if (errorMessage.includes('ESP32') || errorMessage.includes('upload')) {
+        toast.error("❌ MP3 created but failed to send to ESP32. Check ESP32 IP address.");
+      } else if (errorMessage.includes('Gemini') || errorMessage.includes('TTS')) {
+        toast.error("❌ Failed to convert text to MP3. Check TTS service.");
+      } else {
+        toast.error(`❌ ${errorMessage}`);
+      }
+      
+      setTimeout(() => setAudioStatus("idle"), 3000);
     }
   };
 
@@ -114,10 +132,11 @@ export const VoiceApp = () => {
     if (audioStatus === "idle") return null;
 
     const statusConfig = {
-      converting: { text: "Converting to speech...", color: "text-secondary" },
-      sending: { text: "Sending to ESP32...", color: "text-primary" },
-      playing: { text: "Playing audio...", color: "text-accent" },
-      error: { text: "Audio error", color: "text-destructive" }
+      converting: { text: "🔄 Converting to MP3...", color: "text-secondary" },
+      converted: { text: "✅ MP3 file ready!", color: "text-accent" },
+      sending: { text: "📤 Sending to ESP32...", color: "text-primary" },
+      playing: { text: "🔊 Playing audio...", color: "text-accent" },
+      error: { text: "❌ Audio error", color: "text-destructive" }
     };
 
     const config = statusConfig[audioStatus];
