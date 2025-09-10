@@ -214,7 +214,7 @@ export const VoiceApp = () => {
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
                 className="bg-muted border-border resize-none"
-                rows={4}
+                rows={8}
               />
             </div>
             
@@ -239,15 +239,6 @@ export const VoiceApp = () => {
             </Button>
           </div>
         </Card>
-
-        {/* Hero Image */}
-        <div className="mt-8 rounded-xl overflow-hidden shadow-card">
-          <img 
-            src={esp32HeroImage} 
-            alt="ESP32 Voice Assistant Setup" 
-            className="w-full h-32 object-cover opacity-80"
-          />
-        </div>
 
         {/* Footer */}
         <div className="text-center mt-6 text-xs text-muted-foreground">
