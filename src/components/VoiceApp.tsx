@@ -148,7 +148,7 @@ export const VoiceApp = () => {
             ESP32 Voice Assistant
           </h1>
           <p className="text-muted-foreground mt-2">
-            Powered by Google Gemini TTS • Connect your ESP32 device
+            Powered by EchoGlove • Connect your ESP32 device
           </p>
         </div>
 
