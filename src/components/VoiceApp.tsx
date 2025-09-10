@@ -242,7 +242,7 @@ export const VoiceApp = () => {
 
         {/* Footer */}
         <div className="text-center mt-6 text-xs text-muted-foreground">
-          Powered by Google Gemini TTS
+          Powered by EchoGlove
         </div>
       </div>
 
