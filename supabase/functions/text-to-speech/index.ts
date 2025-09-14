@@ -13,11 +13,11 @@ serve(async (req) => {
   }
 
   try {
-    const { message, esp32Ip } = await req.json();
+    const { message } = await req.json();
     
-    if (!message || !esp32Ip) {
+    if (!message) {
       return new Response(
-        JSON.stringify({ error: 'Message and ESP32 IP are required' }),
+        JSON.stringify({ error: 'Message is required' }),
         { 
           status: 400, 
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -73,31 +73,16 @@ serve(async (req) => {
       throw new Error('No audio data received from Gemini TTS');
     }
 
-    console.log('Audio generated successfully, sending to ESP32:', esp32Ip);
-
-    // Send MP3 file to ESP32
-    const formData = new FormData();
-    const audioBlob = new Blob([audioData], { type: 'audio/mp3' });
-    formData.append('audio', audioBlob, 'speech.mp3');
-
-    const esp32Response = await fetch(`http://${esp32Ip}/upload`, {
-      method: 'POST',
-      body: formData,
-      headers: {
-        'Accept': '*/*',
-      }
-    });
-
-    if (!esp32Response.ok) {
-      throw new Error(`ESP32 upload failed: ${esp32Response.status} ${esp32Response.statusText}`);
-    }
-
-    console.log('Audio successfully sent to ESP32');
+    console.log('Audio generated successfully');
 
     return new Response(
       JSON.stringify({ 
-        success: true, 
-        message: 'Audio converted and sent to ESP32 successfully' 
+        success: true,
+        audio: audioData, // base64-encoded PCM (LINEAR16)
+        encoding: 'LINEAR16',
+        sampleRate: 24000,
+        channels: 1,
+        voice: 'Kore'
       }),
       { 
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }

@@ -53,42 +53,87 @@ export const VoiceApp = () => {
       setAudioStatus("converting");
       toast.info("Converting text to speech...");
 
-      // Call Supabase edge function for TTS conversion and ESP32 upload
+      // Helpers: base64 -> bytes and PCM16 -> WAV Blob
+      const base64ToUint8Array = (base64: string) => {
+        const binary = atob(base64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        return bytes;
+      };
+
+      const pcm16ToWav = (pcm: Uint8Array, sampleRate: number, channels: number) => {
+        const blockAlign = channels * 2; // 16-bit = 2 bytes
+        const byteRate = sampleRate * blockAlign;
+        const dataSize = pcm.byteLength;
+        const buffer = new ArrayBuffer(44 + dataSize);
+        const view = new DataView(buffer);
+        let offset = 0;
+        const writeString = (s: string) => { for (let i = 0; i < s.length; i++) view.setUint8(offset++, s.charCodeAt(i)); };
+        const writeUint32 = (v: number) => { view.setUint32(offset, v, true); offset += 4; };
+        const writeUint16 = (v: number) => { view.setUint16(offset, v, true); offset += 2; };
+
+        writeString('RIFF');
+        writeUint32(36 + dataSize);
+        writeString('WAVE');
+        writeString('fmt ');
+        writeUint32(16);
+        writeUint16(1);
+        writeUint16(channels);
+        writeUint32(sampleRate);
+        writeUint32(byteRate);
+        writeUint16(blockAlign);
+        writeUint16(16);
+        writeString('data');
+        writeUint32(dataSize);
+        new Uint8Array(buffer, 44).set(pcm);
+        return new Blob([buffer], { type: 'audio/wav' });
+      };
+
+      // 1) Get audio bytes from Edge Function
       const { data, error } = await supabase.functions.invoke('text-to-speech', {
-        body: {
-          message: message.trim(),
-          esp32Ip: esp32Ip.trim()
-        }
+        body: { message: message.trim() }
       });
 
       if (error) {
         throw new Error(error.message || 'Failed to process audio');
       }
 
-      // Check if audio was successfully converted
-      if (data?.success) {
-        setAudioStatus("converted");
-        toast.success("✅ MP3 file created successfully!");
-        
-        // Small delay to show converted status
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
-        setAudioStatus("sending");
-        toast.info("📤 Sending audio to ESP32...");
-
-        // Small delay to show sending status
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
-        setAudioStatus("playing");
-        toast.success("🔊 Audio is now playing on ESP32!");
-
-        // Reset status after "playback"
-        setTimeout(() => {
-          setAudioStatus("idle");
-        }, 3000);
-      } else {
-        throw new Error(data?.error || 'Unknown error occurred');
+      if (!data?.audio) {
+        throw new Error(data?.error || 'No audio returned from TTS');
       }
+
+      setAudioStatus("converted");
+      toast.success("Audio generated successfully");
+
+      // 2) Build WAV and upload to ESP32 from the browser (LAN-reachable)
+      const pcmBytes = base64ToUint8Array(data.audio);
+      const sampleRate = Number(data.sampleRate) || 24000;
+      const channels = Number(data.channels) || 1;
+      const wavBlob = pcm16ToWav(pcmBytes, sampleRate, channels);
+
+      setAudioStatus("sending");
+      toast.info("Sending audio to ESP32...");
+
+      const formData = new FormData();
+      formData.append('audio', wavBlob, 'speech.wav');
+
+      const uploadResp = await fetch(`http://${esp32Ip.trim()}/upload`, {
+        method: 'POST',
+        body: formData,
+        headers: { 'Accept': '*/*' }
+      });
+
+      if (!uploadResp.ok) {
+        const txt = await uploadResp.text().catch(() => '');
+        throw new Error(`ESP32 upload failed: ${uploadResp.status} ${uploadResp.statusText} ${txt}`);
+      }
+
+      setAudioStatus("playing");
+      toast.success("Audio is now playing on ESP32!");
+
+      setTimeout(() => {
+        setAudioStatus("idle");
+      }, 3000);
 
     } catch (error) {
       console.error('TTS Error:', error);
