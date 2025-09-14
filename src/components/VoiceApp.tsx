@@ -53,42 +53,13 @@ export const VoiceApp = () => {
       setAudioStatus("converting");
       toast.info("Converting text to speech...");
 
-      // Helpers: base64 -> bytes and PCM16 -> WAV Blob
+      // Helpers: base64 -> bytes
       const base64ToUint8Array = (base64: string) => {
         const binary = atob(base64);
         const bytes = new Uint8Array(binary.length);
         for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
         return bytes;
       };
-
-      const pcm16ToWav = (pcm: Uint8Array, sampleRate: number, channels: number) => {
-        const blockAlign = channels * 2; // 16-bit = 2 bytes
-        const byteRate = sampleRate * blockAlign;
-        const dataSize = pcm.byteLength;
-        const buffer = new ArrayBuffer(44 + dataSize);
-        const view = new DataView(buffer);
-        let offset = 0;
-        const writeString = (s: string) => { for (let i = 0; i < s.length; i++) view.setUint8(offset++, s.charCodeAt(i)); };
-        const writeUint32 = (v: number) => { view.setUint32(offset, v, true); offset += 4; };
-        const writeUint16 = (v: number) => { view.setUint16(offset, v, true); offset += 2; };
-
-        writeString('RIFF');
-        writeUint32(36 + dataSize);
-        writeString('WAVE');
-        writeString('fmt ');
-        writeUint32(16);
-        writeUint16(1);
-        writeUint16(channels);
-        writeUint32(sampleRate);
-        writeUint32(byteRate);
-        writeUint16(blockAlign);
-        writeUint16(16);
-        writeString('data');
-        writeUint32(dataSize);
-        new Uint8Array(buffer, 44).set(pcm);
-        return new Blob([buffer], { type: 'audio/wav' });
-      };
-
       // 1) Get audio bytes from Edge Function
       const { data, error } = await supabase.functions.invoke('text-to-speech', {
         body: { message: message.trim() }
@@ -105,17 +76,15 @@ export const VoiceApp = () => {
       setAudioStatus("converted");
       toast.success("Audio generated successfully");
 
-      // 2) Build WAV and upload to ESP32 from the browser (LAN-reachable)
-      const pcmBytes = base64ToUint8Array(data.audio);
-      const sampleRate = Number(data.sampleRate) || 24000;
-      const channels = Number(data.channels) || 1;
-      const wavBlob = pcm16ToWav(pcmBytes, sampleRate, channels);
+      // 2) Build MP3 and upload to ESP32 from the browser (LAN-reachable)
+      const mp3Bytes = base64ToUint8Array(data.audio);
+      const mp3Blob = new Blob([mp3Bytes], { type: 'audio/mpeg' });
 
       setAudioStatus("sending");
       toast.info("Sending audio to ESP32...");
 
       const formData = new FormData();
-      formData.append('audio', wavBlob, 'speech.wav');
+      formData.append('audio', mp3Blob, 'speech.mp3');
 
       const uploadResp = await fetch(`http://${esp32Ip.trim()}/upload`, {
         method: 'POST',
