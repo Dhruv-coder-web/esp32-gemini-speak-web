@@ -46,7 +46,7 @@ serve(async (req) => {
 
     console.log('Converting text to speech:', message);
 
-    // Generate speech from text
+    // Generate speech from text using correct Gemini TTS API
     const result = await model.generateContent({
       contents: [{
         role: "user",
@@ -55,12 +55,19 @@ serve(async (req) => {
         }]
       }],
       generationConfig: {
-        responseMimeType: "audio/mp3"
+        responseModalities: ["AUDIO"],
+        speechConfig: {
+          voiceConfig: {
+            prebuiltVoiceConfig: {
+              voiceName: "Kore"
+            }
+          }
+        }
       }
     });
 
-    // Get the audio data
-    const audioData = result.response.data;
+    // Get the audio data from the correct path
+    const audioData = result.response.candidates[0].content.parts[0].inlineData.data;
     
     if (!audioData) {
       throw new Error('No audio data received from Gemini TTS');
